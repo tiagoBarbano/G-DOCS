@@ -1,4 +1,4 @@
-import uuid, time
+import uuid, time, asyncio
 from fastapi_router_controller import Controller
 from fastapi.responses import ORJSONResponse
 from fastapi.encoders import jsonable_encoder
@@ -24,19 +24,18 @@ from ..database.repository.documentos_repository import (
     get_documento_by_area,
 )
 from ..database.database import get_db
-from ..core.observability import logs
+from ..core.observability import logger
+from ..service.generic_service import check_area, check_documento_exist
 
 
 router = APIRouter()
-controller = Controller(router)
+controller = Controller(router, openapi_tag="DocumentosController")
 
-global log
-logger = logs()
 
 @controller.resource()
 class DocumentosController:
     @controller.route.get(
-        "/v1/documentos",
+        "/documentos",
         status_code=status.HTTP_200_OK,
         response_model=list[DocumentosShema],
     )
@@ -46,7 +45,7 @@ class DocumentosController:
         return await get_all_documentos(db)
 
     @controller.route.get(
-        "/v1/documento/id/{id_doc}",
+        "/documento/id/{id_doc}",
         status_code=status.HTTP_200_OK,
         response_model=DocumentosShema,
     )
@@ -56,7 +55,7 @@ class DocumentosController:
         return await get_documento_by_id(db, id_doc)
 
     @controller.route.get(
-        "/v1/documento/area/{area}",
+        "/documento/area/{area}",
         status_code=status.HTTP_200_OK,
         response_model=list[DocumentosShema],
     )
@@ -73,7 +72,7 @@ class DocumentosController:
         return documento
 
     @controller.route.get(
-        "/v1/documento/uuid/{uuid}",
+        "/documento/uuid/{uuid}",
         status_code=status.HTTP_200_OK,
         response_model=DocumentosShema,
     )
@@ -90,42 +89,39 @@ class DocumentosController:
         return documento
 
     @controller.route.post(
-        "/v1/documentos/{path_documento}", status_code=status.HTTP_201_CREATED
+        "/documentos/{path_documento}", status_code=status.HTTP_201_CREATED
     )
     async def create_documento(
         self,
         path_documento: str,
         background_tasks: BackgroundTasks,
         response: Response,
-        area: Annotated[str | None, Header()],
+        area_request: Annotated[str | None, Header()],
         token: Annotated[str | None, Header()],
         db: AsyncSession = Depends(get_db),
         arq: UploadFile = File(...),
     ):
         try:
-            start_time = time.time()
             my_uuid = uuid.uuid4()
 
-            # background_tasks.add_task(
-            #     add_new_documento, path_documento, area, token, db, arq, my_uuid
-            # )
-            
-            ret = await add_new_documento(path_documento, area, token, db, arq, my_uuid)
-            process_time = time.time() - start_time
-            response.headers["process_time"] = str(process_time)
+            area, flag_doc = await asyncio.gather(
+                check_area(db, area_request, token),
+                check_documento_exist(db, arq.filename),
+            )
 
-            logger.info("TEste")
+            background_tasks.add_task(
+                add_new_documento, path_documento, area, db, arq, my_uuid
+            )
+            
+            ret = {"message": "Solicitação em processamento", "id_doc": str(my_uuid)}
 
             return ORJSONResponse(
                 content=jsonable_encoder(ret), status_code=status.HTTP_201_CREATED
             )
         except HTTPException as ex:
-            raise HTTPException(
-                status_code=ex.status_code,
-                detail=ex.detail
-            )
+            raise HTTPException(status_code=ex.status_code, detail=ex.detail)
 
-    @controller.route.put("/v1/documento/inativa/{uuid}")
+    @controller.route.put("/documento/inativa/{uuid}")
     async def inativa_documento(
         self,
         uuid: uuid.UUID,
@@ -144,13 +140,9 @@ class DocumentosController:
 
             return ORJSONResponse(content=documento, status_code=status.HTTP_200_OK)
         except HTTPException as ex:
-            raise HTTPException(
-                status_code=ex.status_code,
-                detail=ex.detail
-            )
+            raise HTTPException(status_code=ex.status_code, detail=ex.detail)
 
-
-    @controller.route.post("/v1/documento/expurgo")
+    @controller.route.post("/documento/expurgo")
     async def expurgo_documento(
         self,
         area: Annotated[str | None, Header()],

@@ -16,7 +16,7 @@ controller = Controller(router)
 @controller.resource()
 class AreaController:
     
-    @controller.route.post("/v1/area", response_model=AreaShema)
+    @controller.route.post("/area", response_model=AreaShema)
     async def create_area(self, area: AreaRequestShema, db: AsyncSession = Depends(get_db)):        
         find_area = await get_area_by_name(db, area.nome_area)
     

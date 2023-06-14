@@ -4,10 +4,8 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry import trace
 from opentelemetry.sdk.trace.export import BatchSpanProcessor   
-from opentelemetry.exporter.jaeger.thrift import JaegerExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor, Span
 from opentelemetry.instrumentation.logging import LoggingInstrumentor
-from opentelemetry.instrumentation.asyncpg import AsyncPGInstrumentor
 from opentelemetry.instrumentation.botocore import BotocoreInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
@@ -18,24 +16,22 @@ set = get_settings()
 
 
 
-def logs():
-    handler = logging_loki.LokiHandler(
-        url=set.url_loki, tags={"application": set.app_name}, version="1"
-    )
 
-    log_format = "%(asctime)s %(levelname)s [%(name)s] [%(filename)s:%(lineno)d] [trace_id=%(otelTraceID)s span_id=%(otelSpanID)s] - %(message)s"
-    log_formatter = logging.Formatter(log_format)
-    handler.setFormatter(log_formatter)
+handler = logging_loki.LokiHandler(
+    url=set.url_loki, tags={"application": set.app_name}, version="1"
+)
 
-    logger = logging.getLogger("python-logger")
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
+log_format = "%(asctime)s %(levelname)s [%(name)s] [%(filename)s:%(lineno)d] [trace_id=%(otelTraceID)s span_id=%(otelSpanID)s] - %(message)s"
+log_formatter = logging.Formatter(log_format)
+handler.setFormatter(log_formatter)
 
-    return logger
+logger = logging.getLogger("python-logger")
+logger.addHandler(handler)
+logger.setLevel(logging.INFO)
 
 
 def metrics(app: FastAPI):
-    Instrumentator().instrument(app).expose(app)
+    Instrumentator().instrument(app).expose(app, tags=["Metrics"])
 
     
 def tracing(app: FastAPI, engine):
@@ -47,16 +43,7 @@ def tracing(app: FastAPI, engine):
     resource = Resource.create(attributes={"service.name": set.app_name})
     tracer = TracerProvider(resource=resource)
     trace.set_tracer_provider(tracer)
-    
-    # tracer.add_span_processor(
-    #     BatchSpanProcessor(
-    #         JaegerExporter(
-    #             agent_host_name=set.host_jaeger,
-    #             agent_port=set.port_jaeger,
-    #         )
-    #     )
-    # )
-    
+        
     tracer.add_span_processor(
         BatchSpanProcessor(
             OTLPSpanExporter(
@@ -73,7 +60,7 @@ def tracing(app: FastAPI, engine):
         client_request_hook=client_request_hook,
         client_response_hook=client_response_hook,
     )    
-    BotocoreInstrumentor().instrument()
+    # BotocoreInstrumentor().instrument()
 
 def server_request_hook(span: Span, scope: dict):
     if span and span.is_recording():

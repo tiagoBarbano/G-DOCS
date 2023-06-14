@@ -2,7 +2,7 @@ from typing import Any
 from app.api.controller.documentos_controllers import DocumentosController
 from app.api.controller.area_controllers import AreaController
 from fastapi import FastAPI
-from app.api.core.observability import metrics, tracing, logs
+from app.api.core.observability import metrics, tracing
 from app.api.database.database import engine
 
 
@@ -16,13 +16,10 @@ def create_app():
         redoc_url="/redoc",
     )
 
-    global log
-    logger = logs()
-      	
     metrics(app=app)
     tracing(app=app,engine=engine)
 
-    app.include_router(DocumentosController.router())
-    app.include_router(AreaController.router())
+    app.include_router(DocumentosController.router(), tags=["DocumentosController"], prefix="/v1")
+    app.include_router(AreaController.router(), tags=["AreaController"], prefix="/v1")
     
     return app
