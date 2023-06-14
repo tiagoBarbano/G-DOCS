@@ -1,0 +1,181 @@
+version: '3'
+
+volumes:
+  teste: {}
+  redis_data: {}
+  postgres: {}
+
+services:  
+  teste-db:
+    image: mysql:5.7.42
+    command: --max_connections=500
+    restart: always
+    volumes:
+      - teste:/teste
+    environment:
+      TZ: America/Sao_Paulo
+      MYSQL_ROOT_PASSWORD: dbpwd
+      MYSQL_USER: dbuser
+      MYSQL_PASSWORD: dbpwd
+      MYSQL_DATABASE: testdb
+    ports:
+      - 3306:3306
+    expose:
+      - 3306
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.mysql.rule=Host(`mysql.localhost`)"
+      - "traefik.http.services.mysql.loadbalancer.server.port=3306"
+
+  redis:
+    image: redis:alpine
+    command: redis-server --requirepass redis1234
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data  
+
+  postgres:
+    image: postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      PGDATA: /data/postgres
+    volumes:
+       - postgres:/data/postgres
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo
+    container_name: mongodb
+    volumes:
+      - /mongodb/database:/data/db
+    ports:
+      - 27017:27017
+    restart: "unless-stopped"
+
+  grafana:
+      image: grafana/grafana:latest
+      ports:
+        - 3000:3000
+      volumes:
+        - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yaml
+      environment:
+        - GF_AUTH_ANONYMOUS_ENABLED=true
+        - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+        - GF_AUTH_DISABLE_LOGIN_FORM=true
+ 
+  loki:
+    image: grafana/loki:latest
+    ports:
+      - 3100:3100
+    command: -config.file=/etc/loki/local-config.yaml
+
+  promtail:
+    image:  grafana/promtail:latest
+    container_name: promtail
+    volumes:
+      - ./promtail.yaml:/etc/promtail/docker-config.yaml
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: -config.file=/etc/promtail/docker-config.yaml
+    depends_on:
+      - loki
+
+  prometheus:
+    container_name: prometheus
+    image: prom/prometheus:latest
+    command:
+      - --web.console.templates=/etc/prometheus/consoles
+      - --web.console.libraries=/etc/prometheus/console_libraries
+      - --storage.tsdb.retention.time=1h
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+      - --web.route-prefix=/
+      - --enable-feature=exemplar-storage
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway" 
+    deploy:
+      resources:
+        limits:
+          memory: 300M       
+
+  jaeger-all-in-one:
+    image: jaegertracing/all-in-one
+    volumes:
+      - "./jaeger-ui.json:/etc/jaeger/jaeger-ui.json"
+    command: --query.ui-config /etc/jaeger/jaeger-ui.json
+    ports:
+      - 5775:5775/udp
+      - 6831:6831/udp
+      - 6832:6832/udp
+      - 5778:5778
+      - 16686:16686
+      - 14268:14268
+      - 4317:4317
+    environment:
+      # - COLLECTOR_ZIPKIN_HTTP_PORT=9411
+      - METRICS_STORAGE_TYPE=prometheus
+      # - PROMETHEUS_SERVER_URL=http://prometheus:9090
+      - COLLECTOR_OTLP_ENABLED=true
+
+  zipkin:
+    image: openzipkin/zipkin
+    ports:
+      - 9411:9411
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor
+    container_name: cadvisor
+    restart: unless-stopped
+    privileged: true
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+
+  otelcol:
+    image: otel/opentelemetry-collector-contrib
+    command: [ "--config=/etc/otelcol-config.yml", "--config=/etc/otelcol-config-extras.yml" ]
+    volumes:
+      - ./otelcol-config.yml:/etc/otelcol-config.yml
+      - ./otelcol-config-extras.yml:/etc/otelcol-config-extras.yml
+    ports:
+      - "4317"          # OTLP over gRPC receiver
+      - "4318:4318"     # OTLP over HTTP receiver
+      - "9464"          # Prometheus exporter
+      - "8888"          # metrics endpoint
+    depends_on:
+      - jaeger-all-in-one
+    deploy:
+      resources:
+        limits:
+          memory: 125M  
+
+  proxy:
+    image: traefik:v2.8
+    command: 
+      - '--api.insecure=true' 
+      - '--providers.docker'
+      - '--providers.docker.endpoint=unix:///var/run/docker.sock'
+      - '--providers.docker.watch=true'
+      - '--providers.docker.exposedbydefault=true'
+      - '--log.level=DEBUG'
+      - '--entrypoints.web.address=:80'
+      - '--accesslog=true'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - '80:80'
+      - '8081:8080'
