@@ -3,7 +3,7 @@ from fastapi import HTTPException, status, APIRouter, Depends
 from fastapi.encoders import jsonable_encoder
 from ..database.model import AreaModel, StatusTypes
 from ..database.schema import AreaRequestShema, AreaShema
-from ..database.repository.area_repository import get_area_by_name, add_area
+from ..database.repository.area_repository import get_area_by_name, add_area, get_all_areas
 from ..database.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi.responses import ORJSONResponse
@@ -36,3 +36,8 @@ class AreaController:
         area_created = await add_area(db, new_area)
         
         return ORJSONResponse(content=jsonable_encoder(area_created), status_code=status.HTTP_201_CREATED)
+    
+
+    @controller.route.get("/area")
+    async def find_areas(self, db: AsyncSession = Depends(get_db)):
+        return await get_all_areas(db=db)

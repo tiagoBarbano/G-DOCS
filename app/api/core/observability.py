@@ -12,10 +12,8 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 import logging, logging_loki
 from app.api.core.config import get_settings
 
+
 set = get_settings()
-
-
-
 
 handler = logging_loki.LokiHandler(
     url=set.url_loki, tags={"application": set.app_name}, version="1"
@@ -60,7 +58,7 @@ def tracing(app: FastAPI, engine):
         client_request_hook=client_request_hook,
         client_response_hook=client_response_hook,
     )    
-    # BotocoreInstrumentor().instrument()
+    BotocoreInstrumentor().instrument()
 
 def server_request_hook(span: Span, scope: dict):
     if span and span.is_recording():

@@ -14,7 +14,7 @@ from fastapi import (
     Response,
 )
 from ..database.schema import DocumentosShema
-from ..service.documento_service import add_new_documento, inativar_documento
+from ..service.documento_service import add_new_documento, inativar_documento, expurgar_documentos_por_data
 from typing import Annotated
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..database.repository.documentos_repository import (
@@ -26,6 +26,7 @@ from ..database.repository.documentos_repository import (
 from ..database.database import get_db
 from ..core.observability import logger
 from ..service.generic_service import check_area, check_documento_exist
+from ..database.model import StatusTypes
 
 
 router = APIRouter()
@@ -104,10 +105,8 @@ class DocumentosController:
         try:
             my_uuid = uuid.uuid4()
 
-            area, flag_doc = await asyncio.gather(
-                check_area(db, area_request, token),
-                check_documento_exist(db, arq.filename),
-            )
+            area = await check_area(db, area_request, token)
+            flag_doc = await check_documento_exist(db, arq.filename)
 
             background_tasks.add_task(
                 add_new_documento, path_documento, area, db, arq, my_uuid
@@ -125,28 +124,54 @@ class DocumentosController:
     async def inativa_documento(
         self,
         uuid: uuid.UUID,
-        area: Annotated[str | None, Header()],
+        area_request: Annotated[str | None, Header()],
         token: Annotated[str | None, Header()],
         db: AsyncSession = Depends(get_db),
     ):
         try:
-            documento = await inativar_documento(uuid, db, area, token)
-
-            if documento is False:
+            area = await check_area(db, area_request, token)
+            doc = await get_documento_by_uuid(db, uuid)
+            
+            if doc is None:
                 raise HTTPException(
-                    detail="Problema na Atualização",
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                )
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="documento nao encontrado")
+                
+            if doc.status_documento == StatusTypes.ativo.name:
+                flag_inativo = await inativar_documento(db=db, doc=doc)    
+           
+                if flag_inativo is False:
+                    raise HTTPException(
+                        detail="Problema na Atualização",
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                    )
 
-            return ORJSONResponse(content=documento, status_code=status.HTTP_200_OK)
+                ret = { 
+                        "message": "Documento Inativado com Sucesso",
+                        "id_doc": uuid,
+                        }
+            else:
+                ret = { 
+                        "message": "Documento Não pode ser Inativado: Status diferente de Ativo",
+                        "id_doc": uuid,
+                        }
+                
+            return ORJSONResponse(content=ret, status_code=status.HTTP_200_OK)
         except HTTPException as ex:
             raise HTTPException(status_code=ex.status_code, detail=ex.detail)
 
     @controller.route.post("/documento/expurgo")
     async def expurgo_documento(
         self,
-        area: Annotated[str | None, Header()],
-        token: Annotated[str | None, Header()],
         db: AsyncSession = Depends(get_db),
     ):
-        return ORJSONResponse(status_code=status.HTTP_501_NOT_IMPLEMENTED)
+        try:
+            flag_expurgo = await expurgar_documentos_por_data(db=db)
+
+            if flag_expurgo is True:
+                message = "Expurgo Realizado"
+            else: message = "Não existem documentos para expurgo"
+
+            return ORJSONResponse(content=message, status_code=status.HTTP_200_OK)
+        except HTTPException as ex:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="problema no expurgo")

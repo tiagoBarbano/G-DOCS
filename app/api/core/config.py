@@ -15,7 +15,8 @@ class Settings(BaseSettings):
     access_secret: SecretStr
     region_name: str
     otlp_url: AnyUrl
-
+    qtd_dias_expurgo: int
+    
     class Config:
         env_file = ".env"
        

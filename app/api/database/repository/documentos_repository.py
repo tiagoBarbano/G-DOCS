@@ -1,3 +1,4 @@
+import datetime
 from uuid import UUID
 from app.api.database.schema import DocumentosShema
 from app.api.database.model import DocumentoModel, StatusTypes
@@ -26,11 +27,13 @@ async def get_documento_by_area(db: AsyncSession, area: str) -> dict:
     documentos = documentos.scalars().all()
     return documentos
 
+
 async def get_documento_by_name(db: AsyncSession, nome_documento: str) -> dict:
     q = select(DocumentoModel).where(DocumentoModel.nome_documento == nome_documento) 
     documentos = await db.execute(q)
     documento = documentos.scalar_one_or_none()
     return documento
+
 
 async def get_documento_by_uuid(db: AsyncSession, uuid: UUID) -> dict:
     q = select(DocumentoModel).where(DocumentoModel.my_uuid == uuid) 
@@ -44,6 +47,13 @@ async def get_documento_by_uuid_status(db: AsyncSession, uuid: UUID, status: Sta
     documentos = await db.execute(q)
     documento = documentos.scalar_one_or_none()
     return documento
+
+
+async def get_documento_by_data_criacao(db: AsyncSession, data_expurgo: datetime) -> dict:
+    q = select(DocumentoModel).where(DocumentoModel.data_criacao < data_expurgo)
+    documentos = await db.execute(q)
+    documentos = documentos.scalars().all()
+    return documentos
 
 
 async def add_documento(db: AsyncSession, documento: DocumentosShema) -> DocumentosShema:
@@ -71,8 +81,8 @@ async def update_documento(db: AsyncSession, id: int, data: DocumentosShema):
     return False
 
 # Delete a documento from the database
-async def delete_documento(db: AsyncSession, id: int):
-    query = delete(DocumentoModel).where(DocumentoModel.id == id)
+async def delete_documento(db: AsyncSession, ids: list[int]):
+    query = delete(DocumentoModel).filter(DocumentoModel.id.in_(ids))
     await db.execute(query)
     try:
         await db.commit()

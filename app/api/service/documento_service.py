@@ -1,11 +1,13 @@
-import datetime, time, asyncio, os
+import datetime, os
 from fastapi import HTTPException, status
-
+from fastapi.encoders import jsonable_encoder
+from botocore.exceptions import BotoCoreError, ClientError
 from ..database.schema import DocumentosShema
 from ..database.repository.documentos_repository import (
     add_documento,
-    get_documento_by_uuid,
+    get_documento_by_data_criacao,
     update_documento,
+    delete_documento,
 )
 from ..database.model import DocumentoModel, StatusTypes
 from ..database.repository.area_repository import get_area_by_name
@@ -17,68 +19,51 @@ settings = get_settings()
 
 
 async def add_new_documento(path_documento, area, db, documento, myuuid):
-    data_criacao = datetime.datetime.now()
+    try:
+        client = await client_s3()
+        data_criacao = datetime.datetime.now()
+        caminho_documento = f"{area.caminho_area}/{path_documento}/{documento.filename}"      
 
-    caminho_documento = f"{area.caminho_area}/{path_documento}/{documento.filename}"
+        res = os.path.join(os.getcwd(), "downloads")
+        if not os.path.isdir(res):
+            os.mkdir(res)
 
-    client = await client_s3()
+        os.chdir(res)
+        file_location = f"{res}/{documento.filename}"
 
-    res = os.path.join(os.getcwd(), "downloads")
-    if not os.path.isdir(res):
-        os.mkdir(res)
+        with open(file_location, "wb+") as file_object:
+            file_object.write(documento.file.read())
 
-    os.chdir(res)
-    file_location = f"{res}/{documento.filename}"
+        client.upload_file(file_location, settings.bucket_s3, caminho_documento)
+        os.remove(file_location)
 
-    with open(file_location, "wb+") as file_object:
-        file_object.write(documento.file.read())
+        logger.info("Arquivo salvo no S3")
 
-    client.upload_file(file_location, settings.bucket_s3, caminho_documento)
-    os.remove(file_location)
-    logger.info("Arquivo salvo no S3")
+        new_doc = DocumentoModel(
+            area_responsavel=area.nome_area,
+            my_uuid=myuuid,
+            nome_documento=documento.filename,
+            caminho_documento=caminho_documento,
+            status_documento=StatusTypes.ativo.name,
+            data_criacao=data_criacao,
+            data_atualizacao=data_criacao,
+            data_inativacao=datetime.datetime(2999, 12, 31),
+        )
 
-    new_doc = DocumentoModel(
-        area_responsavel=area.nome_area,
-        my_uuid=myuuid,
-        nome_documento=documento.filename,
-        caminho_documento=caminho_documento,
-        status_documento=StatusTypes.ativo.name,
-        data_criacao=data_criacao,
-        data_atualizacao=data_criacao,
-        data_inativacao=datetime.datetime(2999, 12, 31),
-    )
+        doc_created = await add_documento(db, new_doc)
 
-    doc_created = await add_documento(db, new_doc)
+        extra = { "tags": doc_created.dict() }
 
-    return doc_created
-
-
-async def inativar_documento(uuid, db, area, token):
-    find_area = await get_area_by_name(db, area)
-    if token != find_area.token_area:
+        logger.info(msg=f"Arquivo salvo na base de dados", extra={'tags': jsonable_encoder(extra) })
+    except (BotoCoreError, ClientError) as e:
+        client.delete_object(Bucket=settings.bucket_s3, Key=file_location)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str("Token Incorreto"),
         )
 
-    if find_area is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str("Area não existe"),
-        )
 
-    doc = await get_documento_by_uuid(db, uuid)
-    if doc is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str("Documento não encontrado"),
-        )
-
-    if doc.status_documento == StatusTypes.inativo.name:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str("Documento já Inativado"),
-        )
+async def inativar_documento(db, doc):
 
     doc.status_documento = StatusTypes.inativo.name
 
@@ -88,6 +73,30 @@ async def inativar_documento(uuid, db, area, token):
 
     return flag_update
 
+
+async def expurgar_documentos_por_data(db):
+    
+    delta_data_expurgo = datetime.timedelta(settings.qtd_dias_expurgo)
+    data_expurgo = datetime.datetime.now() - delta_data_expurgo
+    
+    doc = await get_documento_by_data_criacao(db=db, data_expurgo=data_expurgo)
+    
+    if not doc:
+        logger.info("Não existem documentos para expurgo")
+        return False
+    
+    doc_schema = DocumentosShema.from_orm(doc)
+    
+    ids = [y.id for y in doc]
+
+    flag_del = await delete_documento(db=db, ids=ids)
+    
+    extra = { "lista_expurgo": doc_schema.dict() }
+    
+    if flag_del:
+        logger.info("Expurgo Realizado", extra={ 'tags': extra })
+    
+    return True
 
 # @router.post("/enviar-arquivo-sinapse", status_code=status.HTTP_200_OK)
 # async def enviar_arquivo_sinapse(arquivo):
