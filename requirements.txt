@@ -21,3 +21,4 @@ opentelemetry-exporter-jaeger-thrift==1.13.0
 opentelemetry-instrumentation-asyncpg==0.34b0
 opentelemetry.instrumentation.sqlalchemy==0.34b0
 opentelemetry.instrumentation.botocore==0.34b0
+pyjwt[crypto]

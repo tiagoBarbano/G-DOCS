@@ -6,26 +6,26 @@ volumes:
   postgres: {}
 
 services:  
-  teste-db:
-    image: mysql:5.7.42
-    command: --max_connections=500
-    restart: always
-    volumes:
-      - teste:/teste
-    environment:
-      TZ: America/Sao_Paulo
-      MYSQL_ROOT_PASSWORD: dbpwd
-      MYSQL_USER: dbuser
-      MYSQL_PASSWORD: dbpwd
-      MYSQL_DATABASE: testdb
-    ports:
-      - 3306:3306
-    expose:
-      - 3306
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.mysql.rule=Host(`mysql.localhost`)"
-      - "traefik.http.services.mysql.loadbalancer.server.port=3306"
+  # teste-db:
+  #   image: mysql:5.7.42
+  #   command: --max_connections=500
+  #   restart: always
+  #   volumes:
+  #     - teste:/teste
+  #   environment:
+  #     TZ: America/Sao_Paulo
+  #     MYSQL_ROOT_PASSWORD: dbpwd
+  #     MYSQL_USER: dbuser
+  #     MYSQL_PASSWORD: dbpwd
+  #     MYSQL_DATABASE: testdb
+  #   ports:
+  #     - 3306:3306
+  #   expose:
+  #     - 3306
+  #   labels:
+  #     - "traefik.enable=true"
+  #     - "traefik.http.routers.mysql.rule=Host(`mysql.localhost`)"
+  #     - "traefik.http.services.mysql.loadbalancer.server.port=3306"
 
   redis:
     image: redis:alpine
@@ -47,14 +47,14 @@ services:
       - "5432:5432"
     restart: unless-stopped
 
-  mongodb:
-    image: mongo
-    container_name: mongodb
-    volumes:
-      - /mongodb/database:/data/db
-    ports:
-      - 27017:27017
-    restart: "unless-stopped"
+  # mongodb:
+  #   image: mongo
+  #   container_name: mongodb
+  #   volumes:
+  #     - /mongodb/database:/data/db
+  #   ports:
+  #     - 27017:27017
+  #   restart: "unless-stopped"
 
   grafana:
       image: grafana/grafana:latest
@@ -126,10 +126,10 @@ services:
       # - PROMETHEUS_SERVER_URL=http://prometheus:9090
       - COLLECTOR_OTLP_ENABLED=true
 
-  zipkin:
-    image: openzipkin/zipkin
-    ports:
-      - 9411:9411
+  # zipkin:
+  #   image: openzipkin/zipkin
+  #   ports:
+  #     - 9411:9411
 
   cadvisor:
     image: gcr.io/cadvisor/cadvisor
@@ -163,19 +163,19 @@ services:
         limits:
           memory: 125M  
 
-  proxy:
-    image: traefik:v2.8
-    command: 
-      - '--api.insecure=true' 
-      - '--providers.docker'
-      - '--providers.docker.endpoint=unix:///var/run/docker.sock'
-      - '--providers.docker.watch=true'
-      - '--providers.docker.exposedbydefault=true'
-      - '--log.level=DEBUG'
-      - '--entrypoints.web.address=:80'
-      - '--accesslog=true'
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    ports:
-      - '80:80'
-      - '8081:8080'
+  # proxy:
+  #   image: traefik:v2.8
+  #   command: 
+  #     - '--api.insecure=true' 
+  #     - '--providers.docker'
+  #     - '--providers.docker.endpoint=unix:///var/run/docker.sock'
+  #     - '--providers.docker.watch=true'
+  #     - '--providers.docker.exposedbydefault=true'
+  #     - '--log.level=DEBUG'
+  #     - '--entrypoints.web.address=:80'
+  #     - '--accesslog=true'
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #   ports:
+  #     - '80:80'
+  #     - '8081:8080'

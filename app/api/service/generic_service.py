@@ -1,5 +1,4 @@
-import boto3
-from botocore import ClientError
+from boto3 import client, exceptions
 from fastapi import HTTPException, status
 from ..core.config import get_settings
 from ..core.observability import logger
@@ -9,8 +8,8 @@ from ..database.repository.documentos_repository import get_documento_by_name
 settings = get_settings()
 
 
-async def client_s3():
-    return boto3.client(
+def client_s3():
+    return client(
         service_name=settings.service_name,
         aws_access_key_id=settings.access_key.get_secret_value(),
         aws_secret_access_key=settings.access_secret.get_secret_value(),
@@ -45,8 +44,6 @@ async def check_documento_exist(db, filename):
             detail=str("Documento já existente"),
         )
 
-    return True
-
 
 async def delete_objects(bucket, object_keys):
     try:
@@ -68,8 +65,8 @@ async def delete_objects(bucket, object_keys):
                 ],
                 bucket.name,
             )
-    except ClientError:
-        logger.exception("Couldn't delete any objects from bucket %s.", bucket.name)
+    except exceptions.Boto3Error as ex:
+        logger.exception("Couldn't delete any objects from bucket %s - Error: %s", bucket.name, str(ex))
         raise
     else:
         return response
