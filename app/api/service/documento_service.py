@@ -12,7 +12,7 @@ from app.api.service.generic_service import client_s3
 from app.api.core.observability import logger
 
 settings = get_settings()
-client = client_s3()
+# client = client_s3()
 
 
 async def start_update_one_documento(path_documento, area, db, documento, myuuid):
@@ -36,9 +36,9 @@ async def start_update_one_documento(path_documento, area, db, documento, myuuid
         with open(file_location, "wb+") as file_object:
             file_object.write(documento.file.read())
 
-        client.upload_file(
-            file_location, settings.bucket_s3, caminho_documento, Config=config
-        )
+        # client.upload_file(
+        #     file_location, settings.bucket_s3, caminho_documento, Config=config
+        # )
         os.remove(file_location)
 
         logger.info("Arquivo salvo no S3")
@@ -65,7 +65,7 @@ async def start_update_one_documento(path_documento, area, db, documento, myuuid
         
         return jsonable_encoder(doc_created)
     except (BotoCoreError, ClientError, Exception) as ex:
-        client.delete_object(Bucket=settings.bucket_s3, Key=file_location)
+        # client.delete_object(Bucket=settings.bucket_s3, Key=file_location)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(f"Token Incorreto: {str(ex)}"),

@@ -9,7 +9,7 @@ from app.api.core.config import get_settings
 
 set = get_settings()
 
-engine = create_async_engine(set.asyncpg_url, future=True, echo=False,)
+engine = create_async_engine(set.asyncpg_url, future=True, echo=False,pool_size=50, max_overflow=0)
 async_session = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 Base = declarative_base()

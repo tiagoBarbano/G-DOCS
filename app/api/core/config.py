@@ -1,6 +1,9 @@
 
-from pydantic import BaseSettings, PostgresDsn, AnyUrl, SecretStr
+from pydantic import BaseSettings, PostgresDsn, AnyUrl, SecretStr, RedisDsn
 from functools import lru_cache
+from fastapi_cache import FastAPICache
+from fastapi import Request, Response
+
 
 
 class Settings(BaseSettings):
@@ -16,6 +19,7 @@ class Settings(BaseSettings):
     region_name: str
     otlp_url: AnyUrl
     qtd_dias_expurgo: int
+    redis_url: RedisDsn
     
     class Config:
         env_file = ".env"
@@ -23,3 +27,17 @@ class Settings(BaseSettings):
 @lru_cache()        
 def get_settings():
     return Settings()
+
+
+def key_user_by_area(
+    func,
+    namespace: str | None = "",
+    request: Request = None,
+    response: Response = None,
+    *args,
+    **kwargs,
+):
+    user_name = kwargs["args"][1]
+    prefix = FastAPICache.get_prefix()
+    cache_key = f"{prefix}:{func.__name__}:{user_name}"
+    return cache_key

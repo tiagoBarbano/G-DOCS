@@ -1,32 +1,10 @@
 version: '3'
 
 volumes:
-  teste: {}
   redis_data: {}
   postgres: {}
 
 services:  
-  # teste-db:
-  #   image: mysql:5.7.42
-  #   command: --max_connections=500
-  #   restart: always
-  #   volumes:
-  #     - teste:/teste
-  #   environment:
-  #     TZ: America/Sao_Paulo
-  #     MYSQL_ROOT_PASSWORD: dbpwd
-  #     MYSQL_USER: dbuser
-  #     MYSQL_PASSWORD: dbpwd
-  #     MYSQL_DATABASE: testdb
-  #   ports:
-  #     - 3306:3306
-  #   expose:
-  #     - 3306
-  #   labels:
-  #     - "traefik.enable=true"
-  #     - "traefik.http.routers.mysql.rule=Host(`mysql.localhost`)"
-  #     - "traefik.http.services.mysql.loadbalancer.server.port=3306"
-
   redis:
     image: redis:alpine
     command: redis-server --requirepass redis1234
@@ -46,15 +24,6 @@ services:
     ports:
       - "5432:5432"
     restart: unless-stopped
-
-  # mongodb:
-  #   image: mongo
-  #   container_name: mongodb
-  #   volumes:
-  #     - /mongodb/database:/data/db
-  #   ports:
-  #     - 27017:27017
-  #   restart: "unless-stopped"
 
   grafana:
       image: grafana/grafana:latest
@@ -101,11 +70,7 @@ services:
     ports:
       - "9090:9090"
     extra_hosts:
-      - "host.docker.internal:host-gateway" 
-    deploy:
-      resources:
-        limits:
-          memory: 300M       
+      - "host.docker.internal:host-gateway"  
 
   jaeger-all-in-one:
     image: jaegertracing/all-in-one
@@ -121,15 +86,9 @@ services:
       - 14268:14268
       - 4317:4317
     environment:
-      # - COLLECTOR_ZIPKIN_HTTP_PORT=9411
       - METRICS_STORAGE_TYPE=prometheus
-      # - PROMETHEUS_SERVER_URL=http://prometheus:9090
+      - PROMETHEUS_SERVER_URL=http://prometheus:9090
       - COLLECTOR_OTLP_ENABLED=true
-
-  # zipkin:
-  #   image: openzipkin/zipkin
-  #   ports:
-  #     - 9411:9411
 
   cadvisor:
     image: gcr.io/cadvisor/cadvisor
@@ -161,21 +120,70 @@ services:
     deploy:
       resources:
         limits:
-          memory: 125M  
+          memory: 125M
 
-  # proxy:
-  #   image: traefik:v2.8
-  #   command: 
-  #     - '--api.insecure=true' 
-  #     - '--providers.docker'
-  #     - '--providers.docker.endpoint=unix:///var/run/docker.sock'
-  #     - '--providers.docker.watch=true'
-  #     - '--providers.docker.exposedbydefault=true'
-  #     - '--log.level=DEBUG'
-  #     - '--entrypoints.web.address=:80'
-  #     - '--accesslog=true'
-  #   volumes:
-  #     - /var/run/docker.sock:/var/run/docker.sock
-  #   ports:
-  #     - '80:80'
-  #     - '8081:8080'
+  gdocs:
+    build: ../
+    volumes:
+      - .:/usr/app
+    ports:
+      - "8100:8100"
+    # expose:
+    #   - "8100"
+    environment: 
+      ASYNCPG_URL: "postgresql+asyncpg://postgres:changeme@postgres:5432/postgres"
+      REDIS_URL: "redis://default:redis1234@redis:6379/0"
+      HOST_JAEGER: "jaeger-all-in-one"
+      PORT_JAEGER: 6831
+      URL_LOKI: "http://loki:3100/loki/api/v1/push"
+      APP_NAME: "G-DOCS"
+      BUCKET_S3: "estudo-tiago-ps"
+      SERVICE_NAME: s3
+      ACCESS_KEY: AKIASVSESB3L24IYU4ZE
+      ACCESS_SECRET: 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
+      REGION_NAME: us-east-1
+      OTLP_URL: http://otelcol:4317
+      QTD_DIAS_EXPURGO: 100
+    depends_on: 
+      - loki
+      - promtail
+      - prometheus
+      - proxy
+      - otelcol
+    # labels:
+    #   - "traefik.enable=true"
+    #   - "traefik.http.routers.gdocs.rule=Host(`gdocs.localhost`)"
+    #   - "traefik.http.services.gdocs.loadbalancer.server.port=8100"
+    restart: always
+    deploy:
+      mode: replicated
+      replicas: 1
+      resources:
+        # limits:
+        #   cpus: '1'
+        #   memory: 500M
+        reservations:
+          cpus: '0.25'
+          memory: 150M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 60s 
+
+  proxy:
+    image: traefik:v2.8
+    command: 
+      - '--api.insecure=true' 
+      - '--providers.docker'
+      - '--providers.docker.endpoint=unix:///var/run/docker.sock'
+      - '--providers.docker.watch=true'
+      - '--providers.docker.exposedbydefault=true'
+      - '--log.level=DEBUG'
+      - '--entrypoints.web.address=:80'
+      - '--accesslog=true'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - '80:80'
+      - '8081:8080'

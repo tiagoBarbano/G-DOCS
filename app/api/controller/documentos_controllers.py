@@ -34,20 +34,18 @@ controller = Controller(router, openapi_tag="DocumentosController")
 
 @controller.resource()
 class DocumentosController:
-    
-    def __init__(self, db: AsyncSession = Depends(get_db), client = Depends(client_s3)) :
-        self.db = db
-        self.client = client
-    
+       
     @controller.route.get(
         "/documentos",
         status_code=status.HTTP_200_OK,
         response_model=list[DocumentosShema],
     )
     async def get_all_documentos(
-        self
+        self,
+        # flag_token: bool = Depends(authenticate_user),
+        db: AsyncSession = Depends(get_db)
     ) -> list[DocumentosShema]:
-        return await get_all_documentos(self.db)
+        return await get_all_documentos(db)
 
 
     @controller.route.get(
@@ -56,9 +54,17 @@ class DocumentosController:
         response_model=DocumentosShema,
     )
     async def find_documento_by_id(
-        self, id: int
+        self, id: int,
+        db: AsyncSession = Depends(get_db)
     ) -> DocumentosShema:
-        return await get_documento_by_id(self.db, id)
+        documento = await get_documento_by_id(db, id)
+        
+        if documento is None:
+            raise HTTPException(
+                detail="Documento não encontrado", status_code=status.HTTP_404_NOT_FOUND
+            )
+
+        return documento
 
 
     @controller.route.get(
@@ -67,9 +73,11 @@ class DocumentosController:
         response_model=list[DocumentosShema],
     )
     async def find_documento_by_area(
-        self, area: str
+        self, 
+        area: str,
+        db: AsyncSession = Depends(get_db)
     ) -> list[DocumentosShema]:
-        documento = await get_documento_by_area(self.db, area)
+        documento = await get_documento_by_area(db, area)
 
         if documento is None:
             raise HTTPException(
@@ -85,9 +93,10 @@ class DocumentosController:
         response_model=DocumentosShema,
     )
     async def get_documento_doc_id(
-        self, doc_id: uuid.UUID, 
+        self, doc_id: uuid.UUID,
+        db: AsyncSession = Depends(get_db)
     ) -> DocumentosShema:
-        documento = await get_documento_by_uuid(self.db, doc_id)
+        documento = await get_documento_by_uuid(db, doc_id)
 
         if documento is None:
             raise HTTPException(
@@ -106,18 +115,20 @@ class DocumentosController:
         background_tasks: BackgroundTasks,
         area_request: Annotated[str | None, Header()],
         token: Annotated[str | None, Header()],
-        flag_token: bool = Depends(authenticate_user),
+        # flag_token: bool = Depends(authenticate_user),
+        db: AsyncSession = Depends(get_db),
         arq: UploadFile = File(...),
     ):
         try:
             my_uuid = uuid.uuid4()
 
-            area = await check_area(self.db, area_request, token)
-            # await check_documento_exist(self.db, arq.filename)
+            area = await check_area(db, area_request, token)
 
-            documento_upload = await start_update_one_documento(path_documento, area, self.db, arq, my_uuid)
+            documento_upload = await start_update_one_documento(path_documento, area, db, arq, my_uuid)
 
-            ret = {"message": "Arquivo Salvo no S3", "id_doc": str(my_uuid)}
+            ret = {"message": "Arquivo Salvo no S3", 
+                   "id_doc": str(my_uuid),
+                   "doc": documento_upload}
             
             extra = {"tags": { "area": area_request} }
             
@@ -135,10 +146,11 @@ class DocumentosController:
         doc_id: uuid.UUID,
         area_request: Annotated[str | None, Header()],
         token: Annotated[str | None, Header()],
+        db: AsyncSession = Depends(get_db),
     ):
         try:
-            area = await check_area(self.db, area_request, token)
-            doc = await get_documento_by_uuid(self.db, doc_id)
+            area = await check_area(db, area_request, token)
+            doc = await get_documento_by_uuid(db, doc_id)
             
             if doc is None:
                 raise HTTPException(
@@ -146,7 +158,7 @@ class DocumentosController:
                         detail="documento nao encontrado")
                 
             if doc.status_documento == StatusTypes.ativo.name:
-                flag_inativo = await inativar_documento(db=self.db, doc=doc)    
+                flag_inativo = await inativar_documento(db=db, doc=doc)    
            
                 if flag_inativo is False:
                     raise HTTPException(
@@ -171,10 +183,11 @@ class DocumentosController:
 
     @controller.route.post("/documento/expurgo")
     async def expurgo_documento(
-        self
+        self,
+        db: AsyncSession = Depends(get_db)
     ):
         try:
-            flag_expurgo = await expurgar_documentos_por_data(db=self.db)
+            flag_expurgo = await expurgar_documentos_por_data(db=db)
 
             if flag_expurgo is True:
                 message = "Expurgo Realizado"
@@ -187,19 +200,20 @@ class DocumentosController:
 
     @controller.route.post("/documento/downloads/{id_doc}")
     async def downloads_documento(self, 
-                                  id_doc: uuid.UUID):
+                                  id_doc: uuid.UUID,
+                                  db: AsyncSession = Depends(get_db)):
                                 #   area_request: Annotated[str | None, Header()],
                                 #   token: Annotated[str | None, Header()]):
         
-        documento = await get_documento_by_uuid(self.db, id_doc)
+        documento = await get_documento_by_uuid(db, id_doc)
         
         if documento is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=str("Documento não existe existente"),
             )
-            
-        result = self.client.download_file(settings.bucket_s3, f"/{documento.caminho_documento}", documento.nome_documento)
+        client = client_s3()    
+        result = client.download_file(settings.bucket_s3, f"/{documento.caminho_documento}", documento.nome_documento)
         
         # Criando um objeto de fluxo de bytes
         file_like = io.BytesIO(result["Body"].read())

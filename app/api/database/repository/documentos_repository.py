@@ -5,6 +5,9 @@ from app.api.database.model import DocumentoModel, StatusTypes
 from sqlalchemy import update, delete
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.api.core.config import key_user_by_area
+from fastapi_cache.decorator import cache
+from fastapi_cache.coder import JsonCoder
 
 
 async def get_all_documentos(db: AsyncSession):
@@ -20,7 +23,9 @@ async def get_documento_by_id(db: AsyncSession, id: int) -> dict:
     documento = documentos.scalar_one_or_none()
     return documento
 
-
+@cache(expire=60,
+       coder=JsonCoder,
+       key_builder=key_user_by_area)
 async def get_documento_by_area(db: AsyncSession, area: str) -> dict:
     q = select(DocumentoModel).where(DocumentoModel.area_responsavel == area) 
     documentos = await db.execute(q)

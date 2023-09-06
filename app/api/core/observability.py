@@ -9,6 +9,7 @@ from opentelemetry.instrumentation.logging import LoggingInstrumentor
 from opentelemetry.instrumentation.botocore import BotocoreInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.redis import RedisInstrumentor
 import logging, logging_loki
 from app.api.core.config import get_settings
 
@@ -58,7 +59,8 @@ def tracing(app: FastAPI, engine):
         client_request_hook=client_request_hook,
         client_response_hook=client_response_hook,
     )    
-    BotocoreInstrumentor().instrument()
+    BotocoreInstrumentor().instrument(tracer_provider=tracer)
+    RedisInstrumentor().instrument(tracer_provider=tracer)
 
 def server_request_hook(span: Span, scope: dict):
     if span and span.is_recording():
