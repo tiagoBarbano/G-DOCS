@@ -3,7 +3,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry import trace
-from opentelemetry.sdk.trace.export import BatchSpanProcessor   
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor, Span
 from opentelemetry.instrumentation.logging import LoggingInstrumentor
 from opentelemetry.instrumentation.botocore import BotocoreInstrumentor
@@ -30,19 +30,21 @@ logger.setLevel(logging.INFO)
 
 
 def metrics(app: FastAPI):
-    Instrumentator().instrument(app).expose(app, tags=["Metrics"])
+    Instrumentator(excluded_handlers=["/docs", "/openapi.json", "/metrics"]).instrument(
+        app
+    ).expose(app, tags=["Metrics"])
 
-    
+
 def tracing(app: FastAPI, engine):
     LoggingInstrumentor().instrument(set_logging_format=True)
     SQLAlchemyInstrumentor().instrument(
-            enable_commenter=True, commenter_options={}, engine=engine.sync_engine
-        )
+        enable_commenter=True, commenter_options={}, engine=engine.sync_engine
+    )
 
     resource = Resource.create(attributes={"service.name": set.app_name})
     tracer = TracerProvider(resource=resource)
     trace.set_tracer_provider(tracer)
-        
+
     tracer.add_span_processor(
         BatchSpanProcessor(
             OTLPSpanExporter(
@@ -51,28 +53,33 @@ def tracing(app: FastAPI, engine):
             )
         )
     )
-    
+
     FastAPIInstrumentor.instrument_app(
         app,
         tracer_provider=tracer,
         server_request_hook=server_request_hook,
         client_request_hook=client_request_hook,
         client_response_hook=client_response_hook,
-    )    
+        excluded_urls="/docs,/openapi.json,/metrics",
+    )
     BotocoreInstrumentor().instrument(tracer_provider=tracer)
     RedisInstrumentor().instrument(tracer_provider=tracer)
+
 
 def server_request_hook(span: Span, scope: dict):
     if span and span.is_recording():
         span.set_attribute("Dados Scope 1", str(scope))
 
+
 def client_request_hook(span: Span, scope: dict):
     if span and span.is_recording():
         span.set_attribute("Dados Scope 2", str(scope))
 
+
 def client_response_hook(span: Span, message: dict):
     if span and span.is_recording():
         span.set_attribute("Dados Message", str(message))
+
 
 def log_hook(span: Span, record: logging.LogRecord):
     if span and span.is_recording():

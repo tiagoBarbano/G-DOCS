@@ -241,7 +241,7 @@ class DocumentosController:
         def download_callback(bytes_amount):
             print(f'Downloaded {bytes_amount} bytes')
             
-        result = s3.download_file(Bucket=settings.bucket_s3, 
+        s3.download_file(Bucket=settings.bucket_s3, 
                                   Key=documento.caminho_documento,
                                   Filename=documento.nome_documento, 
                                   Callback=download_callback)

@@ -11,7 +11,7 @@ settings = get_settings()
 def client_s3():
     return client(
         service_name=settings.service_name,
-        endpoint_url="http://127.0.0.1:4566",
+        endpoint_url="http://localstack:4566",
     )
     # return client(
     #     service_name=settings.service_name,
