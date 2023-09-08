@@ -1,7 +1,7 @@
 import io
 import uuid
 from fastapi_router_controller import Controller
-from fastapi.responses import ORJSONResponse, StreamingResponse
+from fastapi.responses import ORJSONResponse, StreamingResponse, FileResponse
 from fastapi.encoders import jsonable_encoder
 from fastapi import (
     HTTPException,
@@ -115,8 +115,9 @@ class DocumentosController:
         background_tasks: BackgroundTasks,
         area_request: Annotated[str | None, Header()],
         token: Annotated[str | None, Header()],
-        # flag_token: bool = Depends(authenticate_user),
+        #flag_token: bool = Depends(authenticate_user),
         db: AsyncSession = Depends(get_db),
+        s3: AsyncSession = Depends(client_s3),
         arq: UploadFile = File(...),
     ):
         try:
@@ -124,7 +125,7 @@ class DocumentosController:
 
             area = await check_area(db, area_request, token)
 
-            documento_upload = await start_update_one_documento(path_documento, area, db, arq, my_uuid)
+            documento_upload = await start_update_one_documento(path_documento, area, db, arq, my_uuid, s3)
 
             ret = {"message": "Arquivo Salvo no S3", 
                    "id_doc": str(my_uuid),
@@ -181,7 +182,7 @@ class DocumentosController:
             raise HTTPException(status_code=ex.status_code, detail=ex.detail)
 
 
-    @controller.route.post("/documento/expurgo")
+    @controller.route.put("/documento/expurgo")
     async def expurgo_documento(
         self,
         db: AsyncSession = Depends(get_db)
@@ -198,10 +199,11 @@ class DocumentosController:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="problema no expurgo")
 
 
-    @controller.route.post("/documento/downloads/{id_doc}")
-    async def downloads_documento(self, 
+    @controller.route.get("/documento/download_url/{id_doc}")
+    async def download_documento_url(self, 
                                   id_doc: uuid.UUID,
-                                  db: AsyncSession = Depends(get_db)):
+                                  db: AsyncSession = Depends(get_db),
+                                  s3: AsyncSession = Depends(client_s3),):
                                 #   area_request: Annotated[str | None, Header()],
                                 #   token: Annotated[str | None, Header()]):
         
@@ -212,14 +214,68 @@ class DocumentosController:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=str("Documento não existe existente"),
             )
-        client = client_s3()    
-        result = client.download_file(settings.bucket_s3, f"/{documento.caminho_documento}", documento.nome_documento)
+            
+        url_download = s3.generate_presigned_url('get_object',
+                                Params={'Bucket': settings.bucket_s3, 'Key': documento.caminho_documento},
+                                ExpiresIn=60)
         
+        return url_download
+
+
+    @controller.route.get("/documento/download/{id_doc}")
+    async def download_documento(self, 
+                                  id_doc: uuid.UUID,
+                                  db: AsyncSession = Depends(get_db),
+                                  s3 = Depends(client_s3),):
+                                #   area_request: Annotated[str | None, Header()],
+                                #   token: Annotated[str | None, Header()]):
+        
+        documento = await get_documento_by_uuid(db, id_doc)
+        
+        if documento is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str("Documento não existe existente"),
+            )
+            
+        def download_callback(bytes_amount):
+            print(f'Downloaded {bytes_amount} bytes')
+            
+        result = s3.download_file(Bucket=settings.bucket_s3, 
+                                  Key=documento.caminho_documento,
+                                  Filename=documento.nome_documento, 
+                                  Callback=download_callback)
+        
+        return FileResponse(documento.nome_documento, media_type='application/octet-stream',filename=documento.nome_documento)
+
+
+    @controller.route.get("/documento/download_stream/{id_doc}")
+    async def download_stream_documento(self, 
+                                  id_doc: uuid.UUID,
+                                  db: AsyncSession = Depends(get_db),
+                                  s3 = Depends(client_s3),):
+                                #   area_request: Annotated[str | None, Header()],
+                                #   token: Annotated[str | None, Header()]):
+        
+        documento = await get_documento_by_uuid(db, id_doc)
+        
+        if documento is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str("Documento não existe existente"),
+            )
+            
+        
+        result = s3.get_object(
+                Bucket=settings.bucket_s3,
+                Key=documento.caminho_documento )
+            
+ 
         # Criando um objeto de fluxo de bytes
         file_like = io.BytesIO(result["Body"].read())
         
         headers = {
-            "Content-Disposition": "attachment; filename=exemplo.txt"
+            f"Content-Disposition": f"attachment; filename={documento.nome_documento}"
         }
-        
+    
         return StreamingResponse(file_like, headers=headers, media_type="application/octet-stream")

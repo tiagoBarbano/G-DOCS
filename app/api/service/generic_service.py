@@ -11,10 +11,14 @@ settings = get_settings()
 def client_s3():
     return client(
         service_name=settings.service_name,
-        aws_access_key_id=settings.access_key.get_secret_value(),
-        aws_secret_access_key=settings.access_secret.get_secret_value(),
-        region_name=settings.region_name,
+        endpoint_url="http://127.0.0.1:4566",
     )
+    # return client(
+    #     service_name=settings.service_name,
+    #     aws_access_key_id=settings.access_key.get_secret_value(),
+    #     aws_secret_access_key=settings.access_secret.get_secret_value(),
+    #     region_name=settings.region_name,
+    # )
 
 
 async def check_area(db, area, token):
