@@ -20,3 +20,7 @@ scrape_configs:
     static_configs:
     - targets:
       - 'otelcol:8888'
+  - job_name: traefik
+    static_configs:
+    - targets:
+      - 'proxy:8082'

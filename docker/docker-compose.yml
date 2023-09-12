@@ -126,10 +126,10 @@ services:
     build: ../
     volumes:
       - .:/usr/app
-    ports:
-      - "8100:8100"
-    # expose:
-    #   - "8100"
+    # ports:
+    #   - "8100:8100"
+    expose:
+      - "8100"
     environment: 
       ASYNCPG_URL: "postgresql+asyncpg://postgres:changeme@postgres:5432/postgres"
       REDIS_URL: "redis://default:redis1234@redis:6379/0"
@@ -150,18 +150,20 @@ services:
       - prometheus
       - proxy
       - otelcol
-    # labels:
-    #   - "traefik.enable=true"
-    #   - "traefik.http.routers.gdocs.rule=Host(`gdocs.localhost`)"
-    #   - "traefik.http.services.gdocs.loadbalancer.server.port=8100"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gdocs.rule=Host(`gdocs.localhost`)"
+      - "traefik.http.services.gdocs.loadbalancer.server.port=8100"
+      - "traefik.http.routers.gdocs.middlewares=proxy-docker"
+      # - "traefik.http.middlewares.tracing.tracing.spanName=HTTP Request"
     restart: always
     deploy:
       mode: replicated
       replicas: 1
       resources:
-        # limits:
-        #   cpus: '1'
-        #   memory: 500M
+        limits:
+          cpus: '1'
+          memory: 500M
         reservations:
           cpus: '0.25'
           memory: 150M
@@ -182,8 +184,40 @@ services:
       - '--log.level=DEBUG'
       - '--entrypoints.web.address=:80'
       - '--accesslog=true'
+      - '--tracing.serviceName=traefik'
+      - '--tracing.spanName=HTTP Request'
+      - '--tracing.spanNameLimit=250'
+      - '--tracing.jaeger=true'
+      - '--tracing.jaeger.samplingServerURL=http://jaeger-all-in-one:5778/sampling'
+      - '--tracing.jaeger.samplingType=const'
+      - '--tracing.jaeger.samplingParam=1.0'
+      - '--tracing.jaeger.localAgentHostPort=jaeger-all-in-one:6831'
+      - '--tracing.jaeger.gen128Bit=true'
+      - '--tracing.jaeger.propagation=jaeger'
+      - '--tracing.jaeger.traceContextHeaderName=traceparent'
+      - '--tracing.jaeger.traceBaggageHeaderPrefix=tracestate-'
+      - '--tracing.jaeger.collector.endpoint=http://jaeger-all-in-one:14268/api/traces?format=jaeger.thrift'
+      - '--metrics.prometheus=true'
+      - '--metrics.prometheus.addEntryPointsLabels=true'
+      - '--metrics.prometheus.addrouterslabels=true'
+      - '--metrics.prometheus.addServicesLabels=true'
+      - '--entryPoints.metrics.address=:8082'
+      - '--metrics.prometheus.entryPoint=metrics'      
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - '80:80'
       - '8081:8080'
+
+  # localstack:
+  #   container_name: "${LOCALSTACK_DOCKER_NAME-localstack_main}"
+  #   image: localstack/localstack
+  #   ports:
+  #     - "127.0.0.1:4566:4566"            # LocalStack Gateway
+  #     - "127.0.0.1:4510-4559:4510-4559"  # external services port range
+  #   environment:
+  #     - DEBUG=${DEBUG-}
+  #     - DOCKER_HOST=unix:///var/run/docker.sock
+  #   volumes:
+  #     - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack"
+  #     - "/var/run/docker.sock:/var/run/docker.sock"

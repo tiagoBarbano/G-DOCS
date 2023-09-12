@@ -36,11 +36,6 @@ def metrics(app: FastAPI):
 
 
 def tracing(app: FastAPI, engine):
-    LoggingInstrumentor().instrument(set_logging_format=True)
-    SQLAlchemyInstrumentor().instrument(
-        enable_commenter=True, commenter_options={}, engine=engine.sync_engine
-    )
-
     resource = Resource.create(attributes={"service.name": set.app_name})
     tracer = TracerProvider(resource=resource)
     trace.set_tracer_provider(tracer)
@@ -54,6 +49,16 @@ def tracing(app: FastAPI, engine):
         )
     )
 
+    LoggingInstrumentor().instrument(
+        tracer_provider=tracer, set_logging_format=True, log_hook=log_hook
+    )
+
+    SQLAlchemyInstrumentor().instrument(
+        tracer_provider=tracer,
+        enable_commenter=True,
+        commenter_options={},
+        engine=engine.sync_engine,
+    )
     FastAPIInstrumentor.instrument_app(
         app,
         tracer_provider=tracer,
